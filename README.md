@@ -26,20 +26,20 @@ A novel AI system for detecting compensatory movement patterns during physiother
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
-│                      Input Video/Webcam                      │
+│                     Input Video/Webcam                      │
 └─────────────────────┬───────────────────────────────────────┘
                       │
                       ▼
 ┌─────────────────────────────────────────────────────────────┐
-│              MediaPipe Pose Estimation (33 landmarks)        │
+│             MediaPipe Pose Estimation (33 landmarks)        │
 └─────────────────────┬───────────────────────────────────────┘
                       │
                       ▼
 ┌─────────────────────────────────────────────────────────────┐
-│         Feature Extractor (78 biomechanical features)        │
+│        Feature Extractor (78 biomechanical features)        │
 │  • Joint Angles (24)      • Velocities (15)                 │
-│  • Alignment (12)          • Distances (12)                  │
-│  • Temporal (9)            • Stability (6)                   │
+│  • Alignment (12)         • Distances (12)                  │
+│  • Temporal (9)           • Stability (6)                   │
 └─────────────────────┬───────────────────────────────────────┘
                       │
                       ▼
