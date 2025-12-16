@@ -6,8 +6,8 @@ import os
 import numpy as np
 import tensorflow as tf
 from tensorflow import keras
-from tensorflow.keras import layers, models
-from tensorflow.keras.callbacks import EarlyStopping, ReduceLROnPlateau, ModelCheckpoint, TensorBoard
+from keras import layers, models
+from keras.callbacks import EarlyStopping, ReduceLROnPlateau, ModelCheckpoint, TensorBoard
 from sklearn.model_selection import train_test_split
 from sklearn.utils.class_weight import compute_class_weight
 import matplotlib.pyplot as plt
@@ -134,6 +134,7 @@ class BiLSTMModel:
 
         # Train model
         print("\nStarting training...")
+
         self.history = self.model.fit(
             X_train, y_train,
             validation_data=(X_val, y_val),

@@ -82,7 +82,7 @@ pip install tensorflow-gpu==2.15.0
 
 ### Step 4: Verify Installation
 
-```bash
+```bash 
 # Test imports
 python -c "import cv2, mediapipe, tensorflow; print('All imports successful!')"
 ```
@@ -184,9 +184,7 @@ This will create a video showing the detected pose landmarks.
 #### Process All Videos
 
 ```bash
-python data_collector.py \
-    --video_dir data/raw_videos \
-    --output data/processed/training_data.npz
+python data_collector.py --video_dir data/raw_videos --output data/processed/training_data.npz
 ```
 
 **Expected Output**:
@@ -218,6 +216,10 @@ python train.py \
     --val_size 0.15 \              # 15% for validation
     --no_augmentation \            # Disable data augmentation
     --seed 42                      # Random seed for reproducibility
+```
+
+```
+python train.py --data data/processed/training_data.npz --output results/my_training --test_size 0.2 --val_size 0.15 --no_augmentation --seed 42                      
 ```
 
 ### Monitoring Training
