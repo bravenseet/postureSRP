@@ -93,7 +93,7 @@ class BiLSTMModel:
         model.compile(
             optimizer=optimizer,
             loss='sparse_categorical_crossentropy',
-            metrics=['accuracy', keras.metrics.Precision(), keras.metrics.Recall()]
+            metrics=['accuracy']  # Precision/Recall calculated separately in evaluate()
         )
 
         self.model = model
@@ -245,16 +245,15 @@ class BiLSTMModel:
         y_pred_probs = self.model.predict(X_test)
         y_pred = np.argmax(y_pred_probs, axis=1)
 
-        # Calculate metrics
+        # Calculate metrics using sklearn (more accurate for multi-class)
         metrics = calculate_metrics(y_test, y_pred, self.num_classes)
 
         # Add Keras evaluation metrics
-        test_loss, test_acc, test_precision, test_recall = self.model.evaluate(X_test, y_test, verbose=0)
+        test_loss, test_acc = self.model.evaluate(X_test, y_test, verbose=0)
 
         metrics['test_loss'] = test_loss
         metrics['keras_accuracy'] = test_acc
-        metrics['keras_precision'] = test_precision
-        metrics['keras_recall'] = test_recall
+        # Precision and recall already calculated by calculate_metrics() above
 
         return metrics
 
@@ -305,7 +304,16 @@ class BiLSTMModel:
         if self.history is None:
             raise ValueError("No training history available")
 
-        fig, axes = plt.subplots(2, 2, figsize=(15, 10))
+        # Check what metrics are available
+        has_precision = 'precision' in self.history.history
+        has_recall = 'recall' in self.history.history
+
+        # Determine subplot layout
+        if has_precision and has_recall:
+            fig, axes = plt.subplots(2, 2, figsize=(15, 10))
+        else:
+            fig, axes = plt.subplots(1, 2, figsize=(15, 5))
+            axes = axes.reshape(1, 2)  # Make indexing consistent
 
         # Accuracy
         axes[0, 0].plot(self.history.history['accuracy'], label='Train')
@@ -325,23 +333,25 @@ class BiLSTMModel:
         axes[0, 1].legend()
         axes[0, 1].grid(True)
 
-        # Precision
-        axes[1, 0].plot(self.history.history['precision'], label='Train')
-        axes[1, 0].plot(self.history.history['val_precision'], label='Validation')
-        axes[1, 0].set_title('Model Precision')
-        axes[1, 0].set_xlabel('Epoch')
-        axes[1, 0].set_ylabel('Precision')
-        axes[1, 0].legend()
-        axes[1, 0].grid(True)
+        # Precision (only if available)
+        if has_precision and axes.shape[0] > 1:
+            axes[1, 0].plot(self.history.history['precision'], label='Train')
+            axes[1, 0].plot(self.history.history['val_precision'], label='Validation')
+            axes[1, 0].set_title('Model Precision')
+            axes[1, 0].set_xlabel('Epoch')
+            axes[1, 0].set_ylabel('Precision')
+            axes[1, 0].legend()
+            axes[1, 0].grid(True)
 
-        # Recall
-        axes[1, 1].plot(self.history.history['recall'], label='Train')
-        axes[1, 1].plot(self.history.history['val_recall'], label='Validation')
-        axes[1, 1].set_title('Model Recall')
-        axes[1, 1].set_xlabel('Epoch')
-        axes[1, 1].set_ylabel('Recall')
-        axes[1, 1].legend()
-        axes[1, 1].grid(True)
+        # Recall (only if available)
+        if has_recall and axes.shape[0] > 1:
+            axes[1, 1].plot(self.history.history['recall'], label='Train')
+            axes[1, 1].plot(self.history.history['val_recall'], label='Validation')
+            axes[1, 1].set_title('Model Recall')
+            axes[1, 1].set_xlabel('Epoch')
+            axes[1, 1].set_ylabel('Recall')
+            axes[1, 1].legend()
+            axes[1, 1].grid(True)
 
         plt.tight_layout()
 
