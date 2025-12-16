@@ -15,6 +15,7 @@ import mediapipe as mp
 from typing import Dict, List, Optional, Tuple
 import config
 from utils import calculate_angle, calculate_distance, calculate_velocity, normalize_landmarks
+import warnings
 
 
 class FeatureExtractor:
@@ -38,61 +39,121 @@ class FeatureExtractor:
             timestamp: Optional timestamp for velocity calculation
 
         Returns:
-            Feature vector of shape (78,)
+            Feature vector of shape (78,) with padding if needed
         """
         if landmarks is None:
-            return np.zeros(config.FEATURE_DIM)
+            return np.full(config.FEATURE_DIM, config.FEATURE_PADDING_VALUE, dtype=np.float32)
 
-        # Convert landmarks to numpy array
-        landmark_array = self._landmarks_to_array(landmarks)
+        try:
+            # Convert landmarks to numpy array
+            landmark_array = self._landmarks_to_array(landmarks)
 
-        # Normalize landmarks for scale invariance
-        normalized_landmarks = normalize_landmarks(landmark_array)
+            # Normalize landmarks for scale invariance
+            normalized_landmarks = normalize_landmarks(landmark_array)
 
-        # Extract feature categories
-        features = []
+            # Extract feature categories with error handling
+            features = []
 
-        # 1. Joint Angles (24 features)
-        angle_features = self._extract_angle_features(normalized_landmarks, landmark_array)
-        features.extend(angle_features)
+            # 1. Joint Angles (24 features)
+            try:
+                angle_features = self._extract_angle_features(normalized_landmarks, landmark_array)
+                features.extend(angle_features)
+            except Exception as e:
+                warnings.warn(f"Error extracting angle features: {e}")
+                features.extend([0.0] * 24)
 
-        # 2. Body Alignment (12 features)
-        alignment_features = self._extract_alignment_features(normalized_landmarks, landmark_array)
-        features.extend(alignment_features)
+            # 2. Body Alignment (12 features)
+            try:
+                alignment_features = self._extract_alignment_features(normalized_landmarks, landmark_array)
+                features.extend(alignment_features)
+            except Exception as e:
+                warnings.warn(f"Error extracting alignment features: {e}")
+                features.extend([0.0] * 12)
 
-        # 3. Velocities (15 features)
-        velocity_features = self._extract_velocity_features(landmark_array)
-        features.extend(velocity_features)
+            # 3. Velocities (15 features)
+            try:
+                velocity_features = self._extract_velocity_features(landmark_array)
+                features.extend(velocity_features)
+            except Exception as e:
+                warnings.warn(f"Error extracting velocity features: {e}")
+                features.extend([0.0] * 15)
 
-        # 4. Distances and Ratios (12 features)
-        distance_features = self._extract_distance_features(normalized_landmarks, landmark_array)
-        features.extend(distance_features)
+            # 4. Distances and Ratios (12 features)
+            try:
+                distance_features = self._extract_distance_features(normalized_landmarks, landmark_array)
+                features.extend(distance_features)
+            except Exception as e:
+                warnings.warn(f"Error extracting distance features: {e}")
+                features.extend([0.0] * 12)
 
-        # 5. Temporal Features (9 features)
-        temporal_features = self._extract_temporal_features(angle_features)
-        features.extend(temporal_features)
+            # 5. Temporal Features (9 features)
+            try:
+                temporal_features = self._extract_temporal_features(angle_features if len(features) >= 24 else [0.0] * 24)
+                features.extend(temporal_features)
+            except Exception as e:
+                warnings.warn(f"Error extracting temporal features: {e}")
+                features.extend([0.0] * 9)
 
-        # 6. Stability Metrics (6 features)
-        stability_features = self._extract_stability_features(normalized_landmarks)
-        features.extend(stability_features)
+            # 6. Stability Metrics (6 features)
+            try:
+                stability_features = self._extract_stability_features(normalized_landmarks)
+                features.extend(stability_features)
+            except Exception as e:
+                warnings.warn(f"Error extracting stability features: {e}")
+                features.extend([0.0] * 6)
 
-        # Store for next frame
-        self.previous_landmarks = landmark_array
-        self.previous_features = np.array(features)
-        self.frame_count += 1
+            # Store for next frame
+            self.previous_landmarks = landmark_array
+            self.previous_features = np.array(features)
+            self.frame_count += 1
 
-        feature_vector = np.array(features, dtype=np.float32)
+            # Convert to numpy array and handle NaN/Inf
+            feature_vector = np.array(features, dtype=np.float32)
+            feature_vector = self._clean_features(feature_vector)
 
-        # Ensure correct dimension
-        if len(feature_vector) != config.FEATURE_DIM:
-            print(f"Warning: Feature vector has {len(feature_vector)} features, expected {config.FEATURE_DIM}")
-            # Pad or truncate if necessary
-            if len(feature_vector) < config.FEATURE_DIM:
-                feature_vector = np.pad(feature_vector, (0, config.FEATURE_DIM - len(feature_vector)))
-            else:
-                feature_vector = feature_vector[:config.FEATURE_DIM]
+            # Ensure correct dimension
+            if len(feature_vector) != config.FEATURE_DIM:
+                if config.ALLOW_VARIABLE_FEATURES and len(feature_vector) >= config.MIN_FEATURE_DIM:
+                    # Pad to correct dimension
+                    if len(feature_vector) < config.FEATURE_DIM:
+                        padding_size = config.FEATURE_DIM - len(feature_vector)
+                        feature_vector = np.pad(
+                            feature_vector,
+                            (0, padding_size),
+                            constant_values=config.FEATURE_PADDING_VALUE
+                        )
+                    else:
+                        # Truncate if too many features
+                        feature_vector = feature_vector[:config.FEATURE_DIM]
+                else:
+                    # If not enough features and not allowing variable, return padded zeros
+                    warnings.warn(f"Feature vector has only {len(feature_vector)} features, less than minimum {config.MIN_FEATURE_DIM}")
+                    feature_vector = np.full(config.FEATURE_DIM, config.FEATURE_PADDING_VALUE, dtype=np.float32)
 
-        return feature_vector
+            return feature_vector
+
+        except Exception as e:
+            warnings.warn(f"Critical error in feature extraction: {e}")
+            return np.full(config.FEATURE_DIM, config.FEATURE_PADDING_VALUE, dtype=np.float32)
+
+    def _clean_features(self, features: np.ndarray) -> np.ndarray:
+        """
+        Clean feature vector by replacing NaN and Inf values
+
+        Args:
+            features: Raw feature vector
+
+        Returns:
+            Cleaned feature vector
+        """
+        # Replace NaN with padding value
+        features = np.nan_to_num(features, nan=config.FEATURE_PADDING_VALUE,
+                                 posinf=1e6, neginf=-1e6)
+
+        # Clip extreme values
+        features = np.clip(features, -1e6, 1e6)
+
+        return features
 
     def _landmarks_to_array(self, landmarks) -> np.ndarray:
         """
@@ -116,13 +177,23 @@ class FeatureExtractor:
         features = []
         lm = config.KEY_LANDMARKS
 
+        # Helper function to safely calculate angles
+        def safe_angle(*args):
+            try:
+                angle = calculate_angle(*args)
+                if np.isnan(angle) or np.isinf(angle):
+                    return 0.0
+                return float(angle)
+            except:
+                return 0.0
+
         # Elbow angles (2)
-        left_elbow_angle = calculate_angle(
+        left_elbow_angle = safe_angle(
             raw_landmarks[lm['left_shoulder']],
             raw_landmarks[lm['left_elbow']],
             raw_landmarks[lm['left_wrist']]
         )
-        right_elbow_angle = calculate_angle(
+        right_elbow_angle = safe_angle(
             raw_landmarks[lm['right_shoulder']],
             raw_landmarks[lm['right_elbow']],
             raw_landmarks[lm['right_wrist']]
@@ -130,12 +201,12 @@ class FeatureExtractor:
         features.extend([left_elbow_angle, right_elbow_angle])
 
         # Shoulder angles (2)
-        left_shoulder_angle = calculate_angle(
+        left_shoulder_angle = safe_angle(
             raw_landmarks[lm['left_hip']],
             raw_landmarks[lm['left_shoulder']],
             raw_landmarks[lm['left_elbow']]
         )
-        right_shoulder_angle = calculate_angle(
+        right_shoulder_angle = safe_angle(
             raw_landmarks[lm['right_hip']],
             raw_landmarks[lm['right_shoulder']],
             raw_landmarks[lm['right_elbow']]
@@ -143,12 +214,12 @@ class FeatureExtractor:
         features.extend([left_shoulder_angle, right_shoulder_angle])
 
         # Hip angles (2)
-        left_hip_angle = calculate_angle(
+        left_hip_angle = safe_angle(
             raw_landmarks[lm['left_shoulder']],
             raw_landmarks[lm['left_hip']],
             raw_landmarks[lm['left_knee']]
         )
-        right_hip_angle = calculate_angle(
+        right_hip_angle = safe_angle(
             raw_landmarks[lm['right_shoulder']],
             raw_landmarks[lm['right_hip']],
             raw_landmarks[lm['right_knee']]
@@ -156,12 +227,12 @@ class FeatureExtractor:
         features.extend([left_hip_angle, right_hip_angle])
 
         # Knee angles (2)
-        left_knee_angle = calculate_angle(
+        left_knee_angle = safe_angle(
             raw_landmarks[lm['left_hip']],
             raw_landmarks[lm['left_knee']],
             raw_landmarks[lm['left_ankle']]
         )
-        right_knee_angle = calculate_angle(
+        right_knee_angle = safe_angle(
             raw_landmarks[lm['right_hip']],
             raw_landmarks[lm['right_knee']],
             raw_landmarks[lm['right_ankle']]
@@ -193,12 +264,12 @@ class FeatureExtractor:
         features.extend([left_elbow_flare, right_elbow_flare])
 
         # Scapular angles (shoulder protraction) (2)
-        left_scapular_angle = calculate_angle(
+        left_scapular_angle = safe_angle(
             raw_landmarks[lm['left_elbow']],
             raw_landmarks[lm['left_shoulder']],
             raw_landmarks[lm['right_shoulder']]
         )
-        right_scapular_angle = calculate_angle(
+        right_scapular_angle = safe_angle(
             raw_landmarks[lm['right_elbow']],
             raw_landmarks[lm['right_shoulder']],
             raw_landmarks[lm['left_shoulder']]
@@ -206,12 +277,12 @@ class FeatureExtractor:
         features.extend([left_scapular_angle, right_scapular_angle])
 
         # Ankle angles (2)
-        left_ankle_angle = calculate_angle(
+        left_ankle_angle = safe_angle(
             raw_landmarks[lm['left_knee']],
             raw_landmarks[lm['left_ankle']],
             raw_landmarks[lm['left_foot_index']]
         )
-        right_ankle_angle = calculate_angle(
+        right_ankle_angle = safe_angle(
             raw_landmarks[lm['right_knee']],
             raw_landmarks[lm['right_ankle']],
             raw_landmarks[lm['right_foot_index']]
@@ -219,12 +290,12 @@ class FeatureExtractor:
         features.extend([left_ankle_angle, right_ankle_angle])
 
         # Full body angle (shoulder-hip-ankle) (2)
-        left_body_angle = calculate_angle(
+        left_body_angle = safe_angle(
             raw_landmarks[lm['left_shoulder']],
             raw_landmarks[lm['left_hip']],
             raw_landmarks[lm['left_ankle']]
         )
-        right_body_angle = calculate_angle(
+        right_body_angle = safe_angle(
             raw_landmarks[lm['right_shoulder']],
             raw_landmarks[lm['right_hip']],
             raw_landmarks[lm['right_ankle']]
@@ -232,12 +303,12 @@ class FeatureExtractor:
         features.extend([left_body_angle, right_body_angle])
 
         # Wrist angles (2)
-        left_wrist_angle = calculate_angle(
+        left_wrist_angle = safe_angle(
             raw_landmarks[lm['left_elbow']],
             raw_landmarks[lm['left_wrist']],
             raw_landmarks[lm['left_index']]
         )
-        right_wrist_angle = calculate_angle(
+        right_wrist_angle = safe_angle(
             raw_landmarks[lm['right_elbow']],
             raw_landmarks[lm['right_wrist']],
             raw_landmarks[lm['right_index']]
@@ -245,12 +316,12 @@ class FeatureExtractor:
         features.extend([left_wrist_angle, right_wrist_angle])
 
         # Head-neck-torso angle (2)
-        head_torso_angle_left = calculate_angle(
+        head_torso_angle_left = safe_angle(
             raw_landmarks[lm['nose']],
             raw_landmarks[lm['left_shoulder']],
             raw_landmarks[lm['left_hip']]
         )
-        head_torso_angle_right = calculate_angle(
+        head_torso_angle_right = safe_angle(
             raw_landmarks[lm['nose']],
             raw_landmarks[lm['right_shoulder']],
             raw_landmarks[lm['right_hip']]
@@ -392,48 +463,58 @@ class FeatureExtractor:
         features = []
         lm = config.KEY_LANDMARKS
 
+        # Helper function to safely calculate distance
+        def safe_distance(*args):
+            try:
+                dist = calculate_distance(*args)
+                if np.isnan(dist) or np.isinf(dist):
+                    return 0.0
+                return float(dist)
+            except:
+                return 0.0
+
         # Wrist-ankle distance (2)
-        left_wrist_ankle = calculate_distance(
+        left_wrist_ankle = safe_distance(
             raw_landmarks[lm['left_wrist']],
             raw_landmarks[lm['left_ankle']]
         )
-        right_wrist_ankle = calculate_distance(
+        right_wrist_ankle = safe_distance(
             raw_landmarks[lm['right_wrist']],
             raw_landmarks[lm['right_ankle']]
         )
         features.extend([left_wrist_ankle, right_wrist_ankle])
 
         # Shoulder-wrist distance (2)
-        left_shoulder_wrist = calculate_distance(
+        left_shoulder_wrist = safe_distance(
             raw_landmarks[lm['left_shoulder']],
             raw_landmarks[lm['left_wrist']]
         )
-        right_shoulder_wrist = calculate_distance(
+        right_shoulder_wrist = safe_distance(
             raw_landmarks[lm['right_shoulder']],
             raw_landmarks[lm['right_wrist']]
         )
         features.extend([left_shoulder_wrist, right_shoulder_wrist])
 
         # Hip-shoulder distance (2)
-        left_hip_shoulder = calculate_distance(
+        left_hip_shoulder = safe_distance(
             raw_landmarks[lm['left_hip']],
             raw_landmarks[lm['left_shoulder']]
         )
-        right_hip_shoulder = calculate_distance(
+        right_hip_shoulder = safe_distance(
             raw_landmarks[lm['right_hip']],
             raw_landmarks[lm['right_shoulder']]
         )
         features.extend([left_hip_shoulder, right_hip_shoulder])
 
         # Shoulder width (1)
-        shoulder_width = calculate_distance(
+        shoulder_width = safe_distance(
             raw_landmarks[lm['left_shoulder']],
             raw_landmarks[lm['right_shoulder']]
         )
         features.append(shoulder_width)
 
         # Hip width (1)
-        hip_width = calculate_distance(
+        hip_width = safe_distance(
             raw_landmarks[lm['left_hip']],
             raw_landmarks[lm['right_hip']]
         )
@@ -444,21 +525,31 @@ class FeatureExtractor:
         features.append(torso_length)
 
         # Aspect ratio (width/height) (1)
-        body_height = raw_landmarks[lm['nose']][1] - (raw_landmarks[lm['left_ankle']][1] +
-                                                      raw_landmarks[lm['right_ankle']][1]) / 2
-        aspect_ratio = shoulder_width / (abs(body_height) + 1e-6)
+        try:
+            body_height = raw_landmarks[lm['nose']][1] - (raw_landmarks[lm['left_ankle']][1] +
+                                                          raw_landmarks[lm['right_ankle']][1]) / 2
+            aspect_ratio = shoulder_width / (abs(body_height) + 1e-6)
+            if np.isnan(aspect_ratio) or np.isinf(aspect_ratio):
+                aspect_ratio = 0.0
+        except:
+            aspect_ratio = 0.0
         features.append(aspect_ratio)
 
         # Hand-shoulder width ratio (1)
-        hand_width = calculate_distance(raw_landmarks[lm['left_wrist']],
-                                       raw_landmarks[lm['right_wrist']])
-        hand_shoulder_ratio = hand_width / (shoulder_width + 1e-6)
+        hand_width = safe_distance(raw_landmarks[lm['left_wrist']],
+                                   raw_landmarks[lm['right_wrist']])
+        try:
+            hand_shoulder_ratio = hand_width / (shoulder_width + 1e-6)
+            if np.isnan(hand_shoulder_ratio) or np.isinf(hand_shoulder_ratio):
+                hand_shoulder_ratio = 0.0
+        except:
+            hand_shoulder_ratio = 0.0
         features.append(hand_shoulder_ratio)
 
         # Elbow-shoulder distance (1)
         elbow_shoulder_dist = (
-            calculate_distance(raw_landmarks[lm['left_elbow']], raw_landmarks[lm['left_shoulder']]) +
-            calculate_distance(raw_landmarks[lm['right_elbow']], raw_landmarks[lm['right_shoulder']])
+            safe_distance(raw_landmarks[lm['left_elbow']], raw_landmarks[lm['left_shoulder']]) +
+            safe_distance(raw_landmarks[lm['right_elbow']], raw_landmarks[lm['right_shoulder']])
         ) / 2
         features.append(elbow_shoulder_dist)
 

@@ -94,7 +94,18 @@ class RealtimeInference:
 
             # Extract features
             features = self.feature_extractor.extract_features(results.pose_landmarks)
-            self.feature_buffer.append(features)
+
+            # Validate feature dimensions
+            if len(features) == config.FEATURE_DIM:
+                self.feature_buffer.append(features)
+            else:
+                # Still append but log warning
+                if len(features) < config.MIN_FEATURE_DIM:
+                    # Features too small, skip this frame
+                    pass
+                else:
+                    # Features acceptable, append
+                    self.feature_buffer.append(features)
 
             # Make prediction if buffer is full
             if len(self.feature_buffer) == config.SEQUENCE_LENGTH:
@@ -135,14 +146,32 @@ class RealtimeInference:
             prediction: Predicted class
             confidence: Prediction confidence
         """
-        # Convert buffer to numpy array
-        sequence = np.array(list(self.feature_buffer))
-        sequence = sequence[np.newaxis, :, :]  # Add batch dimension
+        try:
+            # Convert buffer to numpy array
+            sequence = np.array(list(self.feature_buffer))
 
-        # Predict
-        predictions = self.model.predict(sequence, verbose=0)
-        confidence = np.max(predictions[0])
-        prediction_class = np.argmax(predictions[0])
+            # Validate sequence shape
+            if sequence.shape[1] != config.FEATURE_DIM:
+                # Pad or truncate features if needed
+                if sequence.shape[1] < config.FEATURE_DIM:
+                    padding = np.full((sequence.shape[0], config.FEATURE_DIM - sequence.shape[1]),
+                                     config.FEATURE_PADDING_VALUE)
+                    sequence = np.concatenate([sequence, padding], axis=1)
+                else:
+                    sequence = sequence[:, :config.FEATURE_DIM]
+
+            # Clean NaN/Inf values
+            sequence = np.nan_to_num(sequence, nan=config.FEATURE_PADDING_VALUE,
+                                    posinf=1e6, neginf=-1e6)
+            sequence = sequence[np.newaxis, :, :]  # Add batch dimension
+
+            # Predict
+            predictions = self.model.predict(sequence, verbose=0)
+            confidence = np.max(predictions[0])
+            prediction_class = np.argmax(predictions[0])
+        except Exception as e:
+            print(f"Error in prediction: {e}")
+            return None, 0.0
 
         # Apply smoothing
         self.prediction_buffer.append(prediction_class)

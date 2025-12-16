@@ -197,16 +197,23 @@ class DataCollector:
             if results.pose_landmarks:
                 # Extract features
                 features = self.feature_extractor.extract_features(results.pose_landmarks)
-                frame_features.append(features)
-                processed_count += 1
+
+                # Validate feature dimensions
+                if len(features) >= config.MIN_FEATURE_DIM:
+                    frame_features.append(features)
+                    processed_count += 1
+                else:
+                    print(f"Warning: Frame {frame_count} has only {len(features)} features (min: {config.MIN_FEATURE_DIM})")
 
             frame_count += 1
 
         cap.release()
 
         if len(frame_features) == 0:
-            print(f"Warning: No pose detected in {video_path}")
+            print(f"Warning: No valid pose features extracted from {video_path}")
             return [], []
+
+        print(f"Processed {processed_count}/{frame_count} frames with valid features")
 
         # Convert to numpy array
         frame_features = np.array(frame_features)
@@ -270,11 +277,14 @@ class DataCollector:
 
             if results.pose_landmarks:
                 features = self.feature_extractor.extract_features(results.pose_landmarks)
-                frame_features.append(features)
 
-                # Store elbow angle for rep detection (average of left and right)
-                elbow_angle = (features[0] + features[1]) / 2
-                elbow_angles.append(elbow_angle)
+                # Validate feature dimensions
+                if len(features) >= config.MIN_FEATURE_DIM:
+                    frame_features.append(features)
+
+                    # Store elbow angle for rep detection (average of left and right)
+                    elbow_angle = (features[0] + features[1]) / 2
+                    elbow_angles.append(elbow_angle)
 
         cap.release()
 

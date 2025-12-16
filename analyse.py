@@ -103,17 +103,42 @@ class PerformanceAnalyzer:
             if results.pose_landmarks:
                 # Extract features
                 features = self.feature_extractor.extract_features(results.pose_landmarks)
-                self.feature_buffer.append(features)
+
+                # Validate feature dimensions
+                if len(features) >= config.MIN_FEATURE_DIM:
+                    self.feature_buffer.append(features)
+                else:
+                    # Skip frames with too few features
+                    frame_count += 1
+                    continue
 
                 # Make prediction if buffer is full
                 if len(self.feature_buffer) == config.SEQUENCE_LENGTH:
-                    sequence = np.array(list(self.feature_buffer))
-                    sequence = sequence[np.newaxis, :, :]
+                    try:
+                        sequence = np.array(list(self.feature_buffer))
 
-                    # Predict
-                    pred_probs = self.model.predict(sequence, verbose=0)
-                    confidence = np.max(pred_probs[0])
-                    prediction = np.argmax(pred_probs[0])
+                        # Validate and fix sequence dimensions
+                        if sequence.shape[1] != config.FEATURE_DIM:
+                            if sequence.shape[1] < config.FEATURE_DIM:
+                                padding = np.full((sequence.shape[0], config.FEATURE_DIM - sequence.shape[1]),
+                                                 config.FEATURE_PADDING_VALUE)
+                                sequence = np.concatenate([sequence, padding], axis=1)
+                            else:
+                                sequence = sequence[:, :config.FEATURE_DIM]
+
+                        # Clean NaN/Inf values
+                        sequence = np.nan_to_num(sequence, nan=config.FEATURE_PADDING_VALUE,
+                                                posinf=1e6, neginf=-1e6)
+                        sequence = sequence[np.newaxis, :, :]
+
+                        # Predict
+                        pred_probs = self.model.predict(sequence, verbose=0)
+                        confidence = np.max(pred_probs[0])
+                        prediction = np.argmax(pred_probs[0])
+                    except Exception as e:
+                        print(f"Error making prediction at frame {frame_count}: {e}")
+                        frame_count += 1
+                        continue
 
                     # Smooth prediction
                     self.prediction_buffer.append(prediction)

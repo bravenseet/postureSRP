@@ -74,6 +74,9 @@ KEY_LANDMARKS = {
 # Feature Extraction Configuration
 SEQUENCE_LENGTH = 30  # Number of frames to use for temporal analysis
 FEATURE_DIM = 78  # Total number of biomechanical features extracted
+MIN_FEATURE_DIM = 30  # Minimum acceptable number of features (allows partial extraction)
+FEATURE_PADDING_VALUE = 0.0  # Value to use when padding incomplete features
+ALLOW_VARIABLE_FEATURES = True  # Allow feature vectors with less than FEATURE_DIM features
 
 # Model Configuration
 BILSTM_CONFIG = {

@@ -416,6 +416,29 @@ def main():
     y = data['y']
 
     print(f"Data shape: X={X.shape}, y={y.shape}")
+
+    # Validate feature dimensions
+    if X.shape[2] != config.FEATURE_DIM:
+        print(f"Warning: Loaded data has {X.shape[2]} features, expected {config.FEATURE_DIM}")
+        if X.shape[2] < config.FEATURE_DIM:
+            print(f"Padding features from {X.shape[2]} to {config.FEATURE_DIM}")
+            padding = np.full((X.shape[0], X.shape[1], config.FEATURE_DIM - X.shape[2]),
+                             config.FEATURE_PADDING_VALUE)
+            X = np.concatenate([X, padding], axis=2)
+        else:
+            print(f"Truncating features from {X.shape[2]} to {config.FEATURE_DIM}")
+            X = X[:, :, :config.FEATURE_DIM]
+        print(f"Adjusted data shape: X={X.shape}")
+
+    # Check for NaN or Inf values
+    nan_count = np.isnan(X).sum()
+    inf_count = np.isinf(X).sum()
+    if nan_count > 0 or inf_count > 0:
+        print(f"Warning: Data contains {nan_count} NaN and {inf_count} Inf values")
+        print("Cleaning data...")
+        X = np.nan_to_num(X, nan=config.FEATURE_PADDING_VALUE, posinf=1e6, neginf=-1e6)
+        X = np.clip(X, -1e6, 1e6)
+
     print(f"Class distribution:")
     for class_id in range(config.NUM_CLASSES):
         count = np.sum(y == class_id)
