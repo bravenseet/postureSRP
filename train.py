@@ -166,10 +166,15 @@ class BiLSTMModel:
             # Augment each sequence
             aug_sequence = augment_sequence(X[i], config.AUGMENTATION_CONFIG)
             X_augmented.append(aug_sequence[np.newaxis, :, :])
-            y_augmented.append(y[i:i+1])
+            # Use y[i] instead of y[i:i+1] to avoid adding extra dimension
+            y_augmented.append(np.array([y[i]]))
 
         X_aug = np.vstack(X_augmented)
         y_aug = np.concatenate(y_augmented)
+
+        # Ensure y_aug is 1D
+        if len(y_aug.shape) > 1:
+            y_aug = y_aug.flatten()
 
         # Shuffle
         indices = np.random.permutation(len(X_aug))
@@ -417,6 +422,13 @@ def main():
     y = data['y']
 
     print(f"Data shape: X={X.shape}, y={y.shape}")
+    print(f"Label dtype: {y.dtype}, unique values: {np.unique(y)}")
+
+    # Fix label shape if needed - sparse_categorical_crossentropy expects 1D labels
+    if len(y.shape) > 1:
+        print(f"Warning: Labels have shape {y.shape}, reshaping to 1D")
+        y = y.flatten()
+        print(f"Fixed label shape: {y.shape}")
 
     # Validate feature dimensions
     if X.shape[2] != config.FEATURE_DIM:

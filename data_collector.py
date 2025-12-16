@@ -121,9 +121,14 @@ class DataCollector:
         X = np.array(all_sequences, dtype=np.float32)
         y = np.array(all_labels, dtype=np.int32)
 
+        # Ensure y is 1D (sparse_categorical_crossentropy expects this)
+        if len(y.shape) > 1:
+            y = y.flatten()
+
         print(f"\nData collection complete!")
         print(f"Total sequences: {len(X)}")
         print(f"Sequence shape: {X.shape}")
+        print(f"Label shape: {y.shape}")
         print(f"Label distribution:")
         for class_id, class_name in config.MOVEMENT_CLASSES.items():
             count = np.sum(y == class_id)
